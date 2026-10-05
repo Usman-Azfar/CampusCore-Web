@@ -84,7 +84,59 @@ public class DBConnection {
     }
 
     public static Connection getConnection() throws SQLException {
-        return pool().getConnection();
+        long t0 = System.nanoTime();
+        Connection c = pool().getConnection();
+        com.cms.util.RequestTiming.addConnectionWait(System.nanoTime() - t0);
+        return timed(c);
+    }
+
+    /** Pool state for /diagnostics: {active, idle, total, waiting threads}, or null before first use. */
+    public static int[] poolStats() {
+        HikariDataSource p = pool;
+        if (p == null || p.getHikariPoolMXBean() == null)
+            return null;
+        var mx = p.getHikariPoolMXBean();
+        return new int[] { mx.getActiveConnections(), mx.getIdleConnections(), mx.getTotalConnections(), mx.getThreadsAwaitingConnection() };
+    }
+
+    public static int maxPoolSize() {
+        return poolSize();
+    }
+
+    // ---------------- statement timing (for /diagnostics) ----------------
+
+    // The connection, with every statement it creates timed; everything else is passed straight through
+    private static Connection timed(Connection real) {
+        return (Connection) java.lang.reflect.Proxy.newProxyInstance(DBConnection.class.getClassLoader(),
+                new Class<?>[] { Connection.class }, (proxy, method, args) -> {
+                    Object result = invoke(real, method, args);
+                    return result instanceof java.sql.Statement ? timedStatement((java.sql.Statement) result) : result;
+                });
+    }
+
+    private static Object timedStatement(java.sql.Statement real) {
+        Class<?> type = real instanceof java.sql.CallableStatement ? java.sql.CallableStatement.class
+                : real instanceof java.sql.PreparedStatement ? java.sql.PreparedStatement.class : java.sql.Statement.class;
+        return java.lang.reflect.Proxy.newProxyInstance(DBConnection.class.getClassLoader(), new Class<?>[] { type },
+                (proxy, method, args) -> {
+                    if (!method.getName().startsWith("execute"))
+                        return invoke(real, method, args);
+                    long t0 = System.nanoTime();
+                    try {
+                        return invoke(real, method, args);
+                    } finally {
+                        com.cms.util.RequestTiming.addStatement(System.nanoTime() - t0);
+                    }
+                });
+    }
+
+    // Calls the real method and rethrows its own exception (not the reflection wrapper)
+    private static Object invoke(Object target, java.lang.reflect.Method method, Object[] args) throws Throwable {
+        try {
+            return method.invoke(target, args);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            throw e.getCause();
+        }
     }
 
     /** Closes all pooled connections (called when the application stops or is redeployed). */

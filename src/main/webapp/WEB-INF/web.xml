@@ -17,7 +17,17 @@
         <listener-class>com.cms.listeners.DatabaseShutdownListener</listener-class>
     </listener>
 
-    <!-- Filters Configuration -->
+    <!-- Filters Configuration (they run in the order of their filter-mappings) -->
+    <!-- Timing Filter: first, so it measures whole requests; adds the X-CampusCore-Build header -->
+    <filter>
+        <filter-name>TimingFilter</filter-name>
+        <filter-class>com.cms.filters.TimingFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>TimingFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
     <!-- Authentication Filter -->
     <filter>
         <filter-name>AuthenticationFilter</filter-name>
@@ -292,6 +302,16 @@
         <servlet-name>ChallanDocumentServlet</servlet-name>
         <url-pattern>/challanView</url-pattern>
         <url-pattern>/challanFile</url-pattern>
+    </servlet-mapping>
+
+    <!-- Admin only: performance report (build, pool, database round trip, timing of recent requests) -->
+    <servlet>
+        <servlet-name>DiagnosticsServlet</servlet-name>
+        <servlet-class>com.cms.controllers.DiagnosticsServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>DiagnosticsServlet</servlet-name>
+        <url-pattern>/diagnostics</url-pattern>
     </servlet-mapping>
 
     <welcome-file-list>
