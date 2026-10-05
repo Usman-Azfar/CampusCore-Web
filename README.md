@@ -39,7 +39,7 @@ It is built with **Java 17, Jakarta Servlets/JSP and MySQL** in a classic MVC st
 
 - All data is **fictional** and is **reset every night**, so feel free to try everything: mark attendance, enter and publish grades, issue challans, approve requests, post announcements.
 - The demo accounts themselves cannot be edited, deactivated or given a new password, so they always work for the next visitor.
-- Free hosting: if the demo has been idle, **the first page can take up to a minute** to wake up. Times are shown in UTC.
+- Free hosting: if the demo has been idle, **the first page can take up to a minute** to wake up; after that pages load in well under a second. Times are shown in UTC.
 
 ---
 
@@ -366,6 +366,8 @@ flowchart LR
 - **Controllers**: one servlet per page or action, all declared in `WEB-INF/web.xml` (the deployment descriptor is `metadata-complete`).
 - **Post/Redirect/Get** for every form: a POST stores a flash message in the session and redirects, so refreshing never re-submits. A failed validation re-shows the form with what the user typed.
 - **Business rules** live in small, unit-tested classes (`AttendanceRules`, `GradeRules`) used by both the servlets and the pages, so the server and the UI apply the same limits.
+- **Connection pool** (HikariCP): database connections are opened once and reused, so a page costs one network round trip per query instead of a new encrypted connection each time.
+- **Observability**: every response carries an `X-CampusCore-Build` header (version, build time, deployed commit), and an admin-only `/diagnostics` page reports the pool state, the database round trip, a CPU benchmark and, for recent requests, how much time went to SQL versus Java and page rendering.
 - **Transactions** wrap every multi-row change (enrollment with grade rows, add/drop approval, attendance and grade sheets, bulk challans); attendance and grade saves lock the course offering row (`SELECT … FOR UPDATE`).
 
 ### Data model (main tables)
@@ -442,6 +444,7 @@ Set these environment variables (or `-D` JVM options with the same names) before
 | `CMS_DB_USER` | `root` | Database user |
 | `CMS_DB_PASSWORD` | `root` | Database password |
 | `CMS_UPLOAD_DIR` (or `-Dcms.upload.dir`) | `<tomcat>/cms-uploads` | Where challan files and payment proofs are stored |
+| `CMS_DB_POOL_SIZE` | `5` | Most database connections kept open at once |
 | `CMS_DEMO_MODE` | `false` | Public demo mode: banner on every page, demo logins on the login page, the demo accounts cannot be edited, deactivated, deleted or given a new password, uploads limited to 2 MB |
 
 If MySQL runs on another machine, set its time zone in the URL, e.g. `connectionTimeZone=Asia/Karachi`.
@@ -492,7 +495,7 @@ The [live demo](https://campuscore-web-9ehv.onrender.com) runs this image on [Re
 mvn test
 ```
 
-The JUnit 5 suite (49 tests) covers the parts where mistakes are costly: password hashing and verification, the attendance rules (date limits, edit window, percentages), the grade rules (mark validation, letter boundaries, blank marks, the post-term edit window, GPA and CGPA including withdrawals and repeated courses), gradebook and attendance filters and grouping, student and admin dashboard alerts, announcement validation and messaging rules.
+The JUnit 5 suite (52 tests) covers the parts where mistakes are costly: password hashing and verification, the attendance rules (date limits, edit window, percentages), the grade rules (mark validation, letter boundaries, blank marks, the post-term edit window, GPA and CGPA including withdrawals and repeated courses), gradebook and attendance filters and grouping, student and admin dashboard alerts, announcement validation, messaging rules and demo-mode protections.
 
 ## Project structure
 
@@ -518,7 +521,6 @@ docs/screenshots/        Images used in this README
 ## Roadmap
 
 - Replace `printStackTrace()` calls with a logging framework.
-- Connection pooling instead of one JDBC connection per query.
 - Mobile layout for the remaining pages (login, FAQ, help desk).
 - *New since your last visit* markers for announcements.
 
